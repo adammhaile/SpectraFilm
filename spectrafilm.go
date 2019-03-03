@@ -226,7 +226,7 @@ func createThumbs(input string, frameDir string) {
 	}
 
 	outFormat := frameDir + "img%06d.png"
-	filter := fmt.Sprintf("fps=%s,scale=-2:480", framerate)
+	filter := fmt.Sprintf("fps=%s,scale=-2:%d", framerate, thumbHeight)
 	opts := []string{"-progress", "pipe:1", "-i", input, "-vf", filter, outFormat}
 	ffmpeg(opts...)
 }
