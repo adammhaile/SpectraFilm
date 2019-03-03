@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -127,11 +128,11 @@ func getPixels(filename string) (RGBList, error) {
 	img := openImage(filename)
 
 	bounds := img.Bounds()
-	width, height := bounds.Max.X, bounds.Max.Y
+	w, h := bounds.Max.X, bounds.Max.Y
 
 	var pixels RGBList
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
 			pixels = append(pixels, rgbaToPixel(img.At(x, y).RGBA()))
 		}
 	}
@@ -225,7 +226,8 @@ func createThumbs(input string, frameDir string) {
 	}
 
 	outFormat := frameDir + "img%06d.png"
-	opts := []string{"-progress", "pipe:1", "-i", input, "-vf", "fps=1/10,scale=-2:480", outFormat}
+	filter := fmt.Sprintf("fps=%s,scale=-2:480", framerate)
+	opts := []string{"-progress", "pipe:1", "-i", input, "-vf", filter, outFormat}
 	ffmpeg(opts...)
 }
 
@@ -351,7 +353,11 @@ func processFrames(frameDir string) []Frame {
 		if genMode > 0 {
 			mode = getMode(pixels)
 			fmt.Printf("  Mode: ")
-			for _, m := range mode[:5] {
+			n := 5
+			if len(mode) < n {
+				n = len(mode)
+			}
+			for _, m := range mode[:n] {
 				fmt.Printf(m.Hex() + ", ")
 			}
 
@@ -368,12 +374,12 @@ func processFrames(frameDir string) []Frame {
 
 func genLineImage(frames RGBList, filename string) {
 	fmt.Println("Generating " + filename)
-	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*height))
+	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*lineHeight))
 	for y, row := range frames {
 		c := row.RGBA()
-		for i := 0; i < height; i++ {
+		for i := 0; i < lineHeight; i++ {
 			for x := 0; x < width; x++ {
-				img.Set(x, (y*height)+i, c)
+				img.Set(x, (y*lineHeight)+i, c)
 			}
 		}
 	}
@@ -392,16 +398,16 @@ func genLineImage(frames RGBList, filename string) {
 
 func genLineColImage(frames []RGBList, filename string) {
 	fmt.Println("Generating " + filename)
-	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*height))
+	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*lineHeight))
 	// cols := len(frames[0])
 	var colWidth int
 	for y, row := range frames {
 		colWidth = width / len(row)
-		for i := 0; i < height; i++ {
+		for i := 0; i < lineHeight; i++ {
 			for j, col := range row {
 				c := col.RGBA()
 				for x := j * colWidth; x < (j*colWidth + colWidth); x++ {
-					img.Set(x, (y*height)+i, c)
+					img.Set(x, (y*lineHeight)+i, c)
 				}
 			}
 		}
@@ -419,6 +425,17 @@ func genLineColImage(frames []RGBList, filename string) {
 	outFile.Close()
 }
 
+func getVideoDuration(filename string) int {
+	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filename)
+
+	out, err := cmd.CombinedOutput()
+	checkErr(err, "Failed to check video duration")
+
+	d, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 32)
+	checkErr(err)
+	return int(d)
+}
+
 func checkErr(e error, msg ...string) {
 	if e != nil {
 		if len(msg) > 0 {
@@ -433,6 +450,9 @@ var inputFile string
 var outDir string
 var width int
 var height int
+var lineHeight int
+var framerate string
+var thumbHeight int
 var genAll bool
 var genAvg bool
 var avgSqr bool
@@ -443,7 +463,9 @@ func main() {
 	flag.StringVar(&inputFile, "i", "", "REQUIRED: Input video to be processed")
 	flag.StringVar(&outDir, "o", "", "REQUIRED: Output directory to write results to")
 	flag.IntVar(&width, "w", 720, "Width of output image.")
-	flag.IntVar(&height, "h", 1, "Height of each line in output image.")
+	flag.IntVar(&height, "h", 1280, "Desired height of output image. Will attempt to get as close as possible")
+	flag.IntVar(&lineHeight, "lh", 1, "Height of each line in output image.")
+	flag.IntVar(&thumbHeight, "th", 480, "Height to scale thumbnails to. Aspect ratio maintained")
 	flag.BoolVar(&genAll, "all", false, "Generate all image options")
 	flag.BoolVar(&genAvg, "avg", false, "Generate average image (default)")
 	flag.BoolVar(&avgSqr, "avg-square", false, "Generate average image using squares algorithm")
@@ -468,7 +490,9 @@ func main() {
 	if genAll {
 		genAvg = true
 		genMed = true
-		genMode = 1
+		if genMode == 0 {
+			genMode = 1
+		}
 	}
 
 	if !genAvg && !genMed && genMode == 0 {
@@ -481,12 +505,26 @@ func main() {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		fmt.Printf("Directory %s does not exist!\n", outDir)
-		os.Exit(1)
+		errDir := os.MkdirAll(outDir, 0755)
+		if errDir != nil {
+			fmt.Println(errDir)
+			os.Exit(1)
+		}
+	}
+
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	frameDir := fmt.Sprintf("%s/frames/", outDir)
 	jsonFile := fmt.Sprintf("%s/data.json", outDir)
+
+	duration := getVideoDuration(inputFile)
+
+	framerate = fmt.Sprintf("%d/%d", (height / lineHeight), duration)
+	fmt.Println(framerate)
+
+	fmt.Println(framerate)
 
 	createThumbs(inputFile, frameDir)
 
@@ -516,7 +554,8 @@ func main() {
 		for i, f := range frames {
 			vals[i] = f.Mode
 		}
-		genLineColImage(vals, outDir+"/mode.png")
+		filename := fmt.Sprintf("/mode_%d.png", genMode)
+		genLineColImage(vals, outDir+filename)
 	}
 
 	var jsonFrames []jsonFrame
