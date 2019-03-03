@@ -83,18 +83,22 @@ type Frame struct {
 	Path    string
 	Average RGB
 	Median  RGB
-	Mode    RGB
+	Mode    RGBList
 }
 
 type jsonFrame struct {
 	Path    string
 	Average string
 	Median  string
-	Mode    string
+	Mode    []string
 }
 
 func (f Frame) toJSONFrame() jsonFrame {
-	return jsonFrame{f.Path, f.Average.Hex(), f.Median.Hex(), f.Mode.Hex()}
+	var mode = make([]string, len(f.Mode))
+	for i, m := range f.Mode {
+		mode[i] = m.Hex()
+	}
+	return jsonFrame{f.Path, f.Average.Hex(), f.Median.Hex(), mode}
 }
 
 func openImage(filename string) image.Image {
@@ -258,17 +262,6 @@ func getAverage(pixels RGBList) RGB {
 	return result
 }
 
-type colorCount struct {
-	Key   RGB
-	Value int
-}
-
-type colorCountList []colorCount
-
-func (p colorCountList) Len() int           { return len(p) }
-func (p colorCountList) Less(i, j int) bool { return p[i].Value < p[j].Value }
-func (p colorCountList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-
 func getMedian(pixels RGBList) RGB {
 	list := make(RGBList, len(pixels))
 	copy(list, pixels)
@@ -277,26 +270,47 @@ func getMedian(pixels RGBList) RGB {
 	return list[len(list)/2]
 }
 
-func getMode(pixels RGBList) RGB {
-	var m = make(map[RGB]int)
+type colorCount struct {
+	Key   string
+	Value int
+	Color RGB
+}
+
+type colorCountList []colorCount
+
+func (p colorCountList) Len() int           { return len(p) }
+func (p colorCountList) Less(i, j int) bool { return p[i].Value < p[j].Value }
+func (p colorCountList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+
+func getMode(pixels RGBList) RGBList {
+	var m = make(map[string]colorCount)
 
 	for _, p := range pixels {
-		if _, ok := m[p]; !ok {
-			m[p] = 0
+		k := p.Hex()
+		if _, ok := m[k]; !ok {
+			m[k] = colorCount{k, 0, p}
 		}
 
-		m[p]++
+		cc := m[k]
+		cc.Value++
+		m[k] = cc
 	}
 
 	counts := make(colorCountList, len(m))
 	i := 0
-	for k, v := range m {
-		counts[i] = colorCount{k, v}
+	for _, v := range m {
+		counts[i] = v
+		i++
 	}
+
+	sort.Sort(counts)
 	sort.Sort(sort.Reverse(counts))
 
-	return counts[0].Key
-	// return RGBList{counts[0].Key}
+	result := make(RGBList, genMode)
+	for i := 0; i < len(counts) && i < genMode; i++ {
+		result[i] = counts[i].Color
+	}
+	return result
 }
 
 func processFrames(frameDir string) []Frame {
@@ -313,7 +327,7 @@ func processFrames(frameDir string) []Frame {
 		if file.IsDir() {
 			continue
 		}
-		fmt.Print(file.Name() + " > ")
+		fmt.Println(file.Name() + " > ")
 
 		pixels, err := getPixels(frameDir + "/" + file.Name())
 		if err != nil {
@@ -322,24 +336,31 @@ func processFrames(frameDir string) []Frame {
 		}
 
 		var avg, median RGB
-		var mode RGB
+		var mode RGBList
 
 		if genAvg {
 			avg = getAverage(pixels)
+			fmt.Printf("  Average: %s\n", avg.Hex())
 		}
 
 		if genMed {
 			median = getMedian(pixels)
+			fmt.Printf("  Median: %s\n", median.Hex())
 		}
 
-		if genMode {
+		if genMode > 0 {
 			mode = getMode(pixels)
+			fmt.Printf("  Mode: ")
+			for _, m := range mode[:5] {
+				fmt.Printf(m.Hex() + ", ")
+			}
+
+			fmt.Println("...")
 		}
 
 		subPath := "frames/" + file.Name()
 
 		result = append(result, Frame{subPath, avg, median, mode})
-		fmt.Printf("rgb(%d, %d, %d) | %s\n", avg.R(), avg.G(), avg.B(), avg.Hex())
 	}
 
 	return result
@@ -353,6 +374,35 @@ func genLineImage(frames RGBList, filename string) {
 		for i := 0; i < height; i++ {
 			for x := 0; x < width; x++ {
 				img.Set(x, (y*height)+i, c)
+			}
+		}
+	}
+
+	outFile, err := os.Create(filename)
+	if err != nil {
+		fmt.Println("Error creating " + filename)
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	png.Encode(outFile, img)
+
+	outFile.Close()
+}
+
+func genLineColImage(frames []RGBList, filename string) {
+	fmt.Println("Generating " + filename)
+	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*height))
+	// cols := len(frames[0])
+	var colWidth int
+	for y, row := range frames {
+		colWidth = width / len(row)
+		for i := 0; i < height; i++ {
+			for j, col := range row {
+				c := col.RGBA()
+				for x := j * colWidth; x < (j*colWidth + colWidth); x++ {
+					img.Set(x, (y*height)+i, c)
+				}
 			}
 		}
 	}
@@ -387,7 +437,7 @@ var genAll bool
 var genAvg bool
 var avgSqr bool
 var genMed bool
-var genMode bool
+var genMode int
 
 func main() {
 	flag.StringVar(&inputFile, "i", "", "REQUIRED: Input video to be processed")
@@ -395,10 +445,10 @@ func main() {
 	flag.IntVar(&width, "w", 720, "Width of output image.")
 	flag.IntVar(&height, "h", 1, "Height of each line in output image.")
 	flag.BoolVar(&genAll, "all", false, "Generate all image options")
-	flag.BoolVar(&genAvg, "avg", true, "Generate average image")
+	flag.BoolVar(&genAvg, "avg", false, "Generate average image (default)")
 	flag.BoolVar(&avgSqr, "avg-square", false, "Generate average image using squares algorithm")
 	flag.BoolVar(&genMed, "median", false, "Generate median image")
-	flag.BoolVar(&genMode, "mode", false, "Generate mode image")
+	flag.IntVar(&genMode, "mode", 0, "Generate mode image with top N values")
 
 	flag.Parse()
 
@@ -418,7 +468,11 @@ func main() {
 	if genAll {
 		genAvg = true
 		genMed = true
-		genMode = true
+		genMode = 1
+	}
+
+	if !genAvg && !genMed && genMode == 0 {
+		genAvg = true
 	}
 
 	res, err := isDir(outDir)
@@ -457,12 +511,12 @@ func main() {
 		genLineImage(vals, outDir+"/med.png")
 	}
 
-	if genMode {
-		vals := make(RGBList, len(frames))
+	if genMode > 0 {
+		vals := make([]RGBList, len(frames))
 		for i, f := range frames {
 			vals[i] = f.Mode
 		}
-		genLineImage(vals, outDir+"/mode.png")
+		genLineColImage(vals, outDir+"/mode.png")
 	}
 
 	var jsonFrames []jsonFrame
