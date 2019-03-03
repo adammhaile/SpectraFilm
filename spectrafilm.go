@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,9 +20,17 @@ import (
 )
 
 //Frame is base object to hold frame info
+// type Frame struct {
+// 	Path    string
+// 	Average color.RGBA
+// 	Median  color.RGBA
+// }
+
+//Frame is base object to hold frame info
 type Frame struct {
-	Color color.RGBA
-	Path  string
+	Path    string
+	Average color.RGBA
+	Median  color.RGBA
 }
 
 func openImage(filename string) image.Image {
@@ -163,7 +172,7 @@ func genAverage(pixels [][]color.RGBA) color.RGBA {
 
 	result := color.RGBA{0, 0, 0, 255}
 
-	if false { //squared algorithm
+	if avgSqr { //squared algorithm
 		// https://sighack.com/post/averaging-rgb-colors-the-right-way?fbclid=IwAR3T1vH62sG1U1JuoSgOJ5-7XqtqekHKmp_Ebw6JwXczteQVkOdgpW5T4Sw
 		for _, row := range pixels {
 			for _, p := range row {
@@ -215,11 +224,19 @@ func processFrames(frameDir string) []Frame {
 			os.Exit(1)
 		}
 
-		avg := genAverage(pixels)
+		var avg, median color.RGBA
+
+		if genAvg {
+			avg = genAverage(pixels)
+		}
+
+		if genMedian {
+
+		}
 
 		subPath := "frames/" + file.Name()
 
-		result = append(result, Frame{avg, subPath})
+		result = append(result, Frame{subPath, avg, median})
 		fmt.Printf("rgb(%d, %d, %d) | #%02X%02X%02X\n", avg.R, avg.G, avg.B, avg.R, avg.G, avg.B)
 	}
 
@@ -234,7 +251,7 @@ func genAvgLineImage(frames []Frame, filename string) {
 	for y, row := range frames {
 		for i := 0; i < lineHeight; i++ {
 			for x := 0; x < w; x++ {
-				img.Set(x, (y*lineHeight)+i, row.Color)
+				img.Set(x, (y*lineHeight)+i, row.Average)
 			}
 		}
 	}
@@ -251,11 +268,34 @@ func genAvgLineImage(frames []Frame, filename string) {
 	outFile.Close()
 }
 
+func checkErr(e error, msg ...string) {
+	if e != nil {
+		if len(msg) > 0 {
+			fmt.Println(msg[0])
+		}
+		fmt.Println(e)
+		os.Exit(1)
+	}
+}
+
+var inputFile string
+var outDir string
+var width int
+var height int
+var genAll bool
+var genAvg bool
+var avgSqr bool
+var genMedian bool
+
 func main() {
-	var inputFile string
-	var outDir string
-	flag.StringVar(&inputFile, "i", "", "Input video to be processed")
-	flag.StringVar(&outDir, "o", "", "Output directory to write results to")
+	flag.StringVar(&inputFile, "i", "", "REQUIRED: Input video to be processed")
+	flag.StringVar(&outDir, "o", "", "REQUIRED: Output directory to write results to")
+	flag.IntVar(&width, "w", 720, "Width of output image.")
+	flag.IntVar(&width, "h", 1280, "Height of output image.")
+	flag.BoolVar(&genAll, "all", false, "Generate all image options")
+	flag.BoolVar(&genAvg, "avg", true, "Generate average image")
+	flag.BoolVar(&avgSqr, "avg-square", false, "Generate average image using squares algorithm")
+	flag.BoolVar(&genMedian, "median", false, "Generate median image")
 
 	flag.Parse()
 
@@ -272,8 +312,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("Input: ", inputFile)
-	fmt.Println("Out Dir: ", outDir)
+	if genAll {
+		genAvg = true
+		genMedian = true
+	}
 
 	res, err := isDir(outDir)
 	if !res {
@@ -286,6 +328,7 @@ func main() {
 	}
 
 	frameDir := fmt.Sprintf("%s/frames/", outDir)
+	jsonFile := fmt.Sprintf("%s/data.json", outDir)
 
 	createThumbs(inputFile, frameDir)
 
@@ -294,14 +337,15 @@ func main() {
 
 	frames := processFrames(frameDir)
 
-	genAvgLineImage(frames, outDir+"/lines.png")
+	// genAvgLineImage(frames, outDir+"/lines.png")
 
-	// b, err := json.Marshal(frames)
+	b, err := json.MarshalIndent(frames, "", "  ")
 
-	// if err != nil {
-	// 	fmt.Println("Error exporting to json!")
-	// 	os.Exit(1)
-	// }
+	if err != nil {
+		fmt.Println("Error exporting to json!")
+		os.Exit(1)
+	}
 
-	// fmt.Println(string(b))
+	err = ioutil.WriteFile(jsonFile, b, 0644)
+	checkErr(err)
 }
