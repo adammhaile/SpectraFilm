@@ -61,6 +61,61 @@ func (c RGB) Uint32() uint32 {
 	return ((uint32(c[0]) << 16) | (uint32(c[1]) << 8) | (uint32(c[2]) << 0))
 }
 
+type HSL struct {
+	H, S, L float64
+}
+
+func (c RGB) ToHSL() HSL {
+	var h, s, l float64
+
+	r := float64(c.R())
+	g := float64(c.G())
+	b := float64(c.B())
+
+	max := math.Max(math.Max(r, g), b)
+	min := math.Min(math.Min(r, g), b)
+
+	// Luminosity is the average of the max and min rgb color intensities.
+	l = (max + min) / 2
+
+	// saturation
+	delta := max - min
+	if delta == 0 {
+		// it's gray
+		return HSL{0, 0, l}
+	}
+
+	// it's not gray
+	if l < 0.5 {
+		s = delta / (max + min)
+	} else {
+		s = delta / (2 - max - min)
+	}
+
+	// hue
+	r2 := (((max - r) / 6) + (delta / 2)) / delta
+	g2 := (((max - g) / 6) + (delta / 2)) / delta
+	b2 := (((max - b) / 6) + (delta / 2)) / delta
+	switch {
+	case r == max:
+		h = b2 - g2
+	case g == max:
+		h = (1.0 / 3.0) + r2 - b2
+	case b == max:
+		h = (2.0 / 3.0) + g2 - r2
+	}
+
+	// fix wraparounds
+	switch {
+	case h < 0:
+		h += 1
+	case h > 1:
+		h -= 1
+	}
+
+	return HSL{h, s, l}
+}
+
 //RGBList used for sorting
 type RGBList []RGB
 
@@ -76,7 +131,8 @@ func (l RGBList) Swap(i, j int) {
 
 //Less for sort
 func (l RGBList) Less(i, j int) bool {
-	return l[i].Uint32() < l[j].Uint32()
+	// return l[i].Uint32() < l[j].Uint32()
+	return l[i].ToHSL().H < l[j].ToHSL().H
 }
 
 //Frame is base object to hold frame info
@@ -312,6 +368,7 @@ func getMode(pixels RGBList) RGBList {
 	for i := 0; i < len(counts) && i < genMode; i++ {
 		result[i] = counts[i].Color
 	}
+	sort.Sort(result)
 	return result
 }
 
