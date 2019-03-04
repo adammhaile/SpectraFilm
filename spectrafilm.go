@@ -531,8 +531,8 @@ func main() {
 
 	flag.Parse()
 
-	inputFile = strings.ReplaceAll(inputFile, "\\", "/")
-	outDir = strings.ReplaceAll(outDir, "\\", "/")
+	inputFile = strings.Replace(inputFile, "\\", "/", -1)
+	outDir = strings.Replace(outDir, "\\", "/", -1)
 
 	if inputFile == "" {
 		fmt.Print("-i [INPUT_FILE] is required!\n")
