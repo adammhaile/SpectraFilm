@@ -437,11 +437,11 @@ func processFrames(frameDir string) []Frame {
 
 func genLineImage(frames RGBList, filename string) {
 	fmt.Println("Generating " + filename)
-	img := image.NewRGBA(image.Rect(0, 0, len(frames)*lineWidth, width))
+	img := image.NewRGBA(image.Rect(0, 0, len(frames)*lineWidth, height))
 	for x, col := range frames {
 		c := col.RGBA()
 		for i := 0; i < lineWidth; i++ {
-			for y := 0; y < width; y++ {
+			for y := 0; y < height; y++ {
 				img.Set((x*lineWidth)+i, y, c)
 			}
 		}
@@ -461,11 +461,11 @@ func genLineImage(frames RGBList, filename string) {
 
 func genLineColImage(frames []RGBList, filename string) {
 	fmt.Println("Generating " + filename)
-	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*lineWidth))
+	img := image.NewRGBA(image.Rect(0, 0, len(frames)*lineWidth, height))
 
 	var rowHeight int
 	for x, c := range frames {
-		rowHeight = width / len(c)
+		rowHeight = height / len(c)
 		for i := 0; i < lineWidth; i++ {
 			for j, col := range c {
 				c := col.RGBA()
