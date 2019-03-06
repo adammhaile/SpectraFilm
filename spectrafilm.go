@@ -131,8 +131,10 @@ func (l RGBList) Swap(i, j int) {
 
 //Less for sort
 func (l RGBList) Less(i, j int) bool {
-	// return l[i].Uint32() < l[j].Uint32()
-	return l[i].ToHSL().H < l[j].ToHSL().H
+	a := (l[i].ToHSL().H + l[i].ToHSL().S + l[i].ToHSL().L)
+	b := (l[j].ToHSL().H + l[j].ToHSL().S + l[j].ToHSL().L)
+	// return l[i].ToHSL().H < l[j].ToHSL().H
+	return a < b
 }
 
 //Frame is base object to hold frame info
@@ -431,12 +433,12 @@ func processFrames(frameDir string) []Frame {
 
 func genLineImage(frames RGBList, filename string) {
 	fmt.Println("Generating " + filename)
-	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*lineHeight))
-	for y, row := range frames {
-		c := row.RGBA()
-		for i := 0; i < lineHeight; i++ {
-			for x := 0; x < width; x++ {
-				img.Set(x, (y*lineHeight)+i, c)
+	img := image.NewRGBA(image.Rect(0, 0, len(frames)*lineWidth, width))
+	for x, col := range frames {
+		c := col.RGBA()
+		for i := 0; i < lineWidth; i++ {
+			for y := 0; y < width; y++ {
+				img.Set((x*lineWidth)+i, y, c)
 			}
 		}
 	}
@@ -455,16 +457,16 @@ func genLineImage(frames RGBList, filename string) {
 
 func genLineColImage(frames []RGBList, filename string) {
 	fmt.Println("Generating " + filename)
-	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*lineHeight))
+	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*lineWidth))
 	// cols := len(frames[0])
-	var colWidth int
-	for y, row := range frames {
-		colWidth = width / len(row)
-		for i := 0; i < lineHeight; i++ {
-			for j, col := range row {
+	var rowHeight int
+	for x, c := range frames {
+		rowHeight = width / len(c)
+		for i := 0; i < lineWidth; i++ {
+			for j, col := range c {
 				c := col.RGBA()
-				for x := j * colWidth; x < (j*colWidth + colWidth); x++ {
-					img.Set(x, (y*lineHeight)+i, c)
+				for y := j * rowHeight; y < (j*rowHeight + rowHeight); y++ {
+					img.Set((x*lineWidth)+i, y, c)
 				}
 			}
 		}
@@ -507,7 +509,7 @@ var inputFile string
 var outDir string
 var width int
 var height int
-var lineHeight int
+var lineWidth int
 var framerate string
 var thumbHeight int
 var genAll bool
@@ -517,11 +519,14 @@ var genMed bool
 var genMode int
 
 func main() {
+	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
+	image.RegisterFormat("jpg", "jpg", jpeg.Decode, jpeg.DecodeConfig)
+
 	flag.StringVar(&inputFile, "i", "", "REQUIRED: Input video to be processed")
 	flag.StringVar(&outDir, "o", "", "REQUIRED: Output directory to write results to")
-	flag.IntVar(&width, "w", 720, "Width of output image.")
-	flag.IntVar(&height, "h", 1280, "Desired height of output image. Will attempt to get as close as possible")
-	flag.IntVar(&lineHeight, "lh", 1, "Height of each line in output image.")
+	flag.IntVar(&width, "w", 1280, "Width of output image.")
+	flag.IntVar(&height, "h", 720, "Desired height of output image. Will attempt to get as close as possible")
+	flag.IntVar(&lineWidth, "lw", 1, "Width of each line in output image.")
 	flag.IntVar(&thumbHeight, "th", 480, "Height to scale thumbnails to. Aspect ratio maintained")
 	flag.BoolVar(&genAll, "all", false, "Generate all image options")
 	flag.BoolVar(&genAvg, "avg", false, "Generate average image (default)")
@@ -576,17 +581,21 @@ func main() {
 	frameDir := fmt.Sprintf("%s/frames/", outDir)
 	jsonFile := fmt.Sprintf("%s/data.json", outDir)
 
-	duration := getVideoDuration(inputFile)
+	dirExists, err := isDir(outDir)
+	filesExist := false
+	if dirExists {
+		files, _ := ioutil.ReadDir(frameDir)
+		// clready files to be processed
+		filesExist = (len(files) > 0)
+	}
 
-	framerate = fmt.Sprintf("%d/%d", (height / lineHeight), duration)
-	fmt.Println(framerate)
+	if !dirExists || !filesExist {
+		duration := getVideoDuration(inputFile)
 
-	fmt.Println(framerate)
+		framerate = fmt.Sprintf("%d/%d", (height / lineWidth), duration)
 
-	createThumbs(inputFile, frameDir)
-
-	image.RegisterFormat("png", "png", png.Decode, png.DecodeConfig)
-	image.RegisterFormat("jpg", "jpg", jpeg.Decode, jpeg.DecodeConfig)
+		createThumbs(inputFile, frameDir)
+	}
 
 	frames := processFrames(frameDir)
 
