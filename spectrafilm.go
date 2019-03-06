@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //Frame is base object to hold frame info
@@ -168,11 +169,12 @@ func openImage(filename string) image.Image {
 		os.Exit(1)
 	}
 
-	defer file.Close()
-
 	img, _, err := image.Decode(file)
 
+	file.Close()
+
 	if err != nil {
+		fmt.Println("openImage fail")
 		fmt.Println(err)
 		os.Exit(1)
 	}
@@ -375,15 +377,17 @@ func getMode(pixels RGBList) RGBList {
 }
 
 func processFrames(frameDir string) []Frame {
-	fmt.Println("Generating average data for frames...")
+	fmt.Println("Generating data for frames...")
 	files, err := ioutil.ReadDir(frameDir)
 
 	if err != nil {
+		fmt.Println("Error getting files")
 		log.Fatal(err)
 	}
 
 	var result []Frame
 
+	fmt.Println("loop files")
 	for _, file := range files {
 		if file.IsDir() {
 			continue
@@ -458,7 +462,7 @@ func genLineImage(frames RGBList, filename string) {
 func genLineColImage(frames []RGBList, filename string) {
 	fmt.Println("Generating " + filename)
 	img := image.NewRGBA(image.Rect(0, 0, width, len(frames)*lineWidth))
-	// cols := len(frames[0])
+
 	var rowHeight int
 	for x, c := range frames {
 		rowHeight = width / len(c)
@@ -592,11 +596,11 @@ func main() {
 	if !dirExists || !filesExist {
 		duration := getVideoDuration(inputFile)
 
-		framerate = fmt.Sprintf("%d/%d", (height / lineWidth), duration)
+		framerate = fmt.Sprintf("%d/%d", (width / lineWidth), duration)
 
 		createThumbs(inputFile, frameDir)
+		time.Sleep(2 * time.Second)
 	}
-
 	frames := processFrames(frameDir)
 
 	if genAvg {
