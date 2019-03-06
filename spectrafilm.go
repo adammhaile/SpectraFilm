@@ -16,6 +16,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,10 +63,12 @@ func (c RGB) Uint32() uint32 {
 	return ((uint32(c[0]) << 16) | (uint32(c[1]) << 8) | (uint32(c[2]) << 0))
 }
 
+//HSL stores Hue, Saturation, Luminance
 type HSL struct {
 	H, S, L float64
 }
 
+//ToHSL convert RGB to HSL
 func (c RGB) ToHSL() HSL {
 	var h, s, l float64
 
@@ -109,9 +112,9 @@ func (c RGB) ToHSL() HSL {
 	// fix wraparounds
 	switch {
 	case h < 0:
-		h += 1
+		h++
 	case h > 1:
-		h -= 1
+		h--
 	}
 
 	return HSL{h, s, l}
@@ -274,13 +277,13 @@ func createThumbs(input string, frameDir string) {
 		}
 	}
 
-	files, err := ioutil.ReadDir(frameDir)
+	files, err := filepath.Glob(frameDir + "/*.png")
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if len(files) > 0 {
+	if files != nil && len(files) > 0 {
 		fmt.Println("Frames already found in " + frameDir + "\nSkipping thumbnail generation.")
 		return
 	}
@@ -378,7 +381,7 @@ func getMode(pixels RGBList) RGBList {
 
 func processFrames(frameDir string) []Frame {
 	fmt.Println("Generating data for frames...")
-	files, err := ioutil.ReadDir(frameDir)
+	files, err := filepath.Glob(frameDir + "/*.png")
 
 	if err != nil {
 		fmt.Println("Error getting files")
@@ -389,12 +392,11 @@ func processFrames(frameDir string) []Frame {
 
 	fmt.Println("loop files")
 	for _, file := range files {
-		if file.IsDir() {
-			continue
-		}
-		fmt.Println(file.Name() + " > ")
+		file = strings.Replace(file, "\\", "/", -1)
+		filename := strings.Replace(file, frameDir, "", -1)
+		fmt.Println(filename + " > ")
 
-		pixels, err := getPixels(frameDir + "/" + file.Name())
+		pixels, err := getPixels(frameDir + "/" + filename)
 		if err != nil {
 			fmt.Println("Error: Image could not be decoded")
 			os.Exit(1)
@@ -427,7 +429,7 @@ func processFrames(frameDir string) []Frame {
 			fmt.Println("...")
 		}
 
-		subPath := "frames/" + file.Name()
+		subPath := "frames/" + filename
 
 		result = append(result, Frame{subPath, avg, median, mode})
 	}
@@ -583,14 +585,15 @@ func main() {
 	}
 
 	frameDir := fmt.Sprintf("%s/frames/", outDir)
+	frameDir = strings.Replace(frameDir, "//", "/", -1)
 	jsonFile := fmt.Sprintf("%s/data.json", outDir)
 
 	dirExists, err := isDir(outDir)
 	filesExist := false
 	if dirExists {
-		files, _ := ioutil.ReadDir(frameDir)
+		files, _ := filepath.Glob(frameDir + "/*.png")
 		// clready files to be processed
-		filesExist = (len(files) > 0)
+		filesExist = (files != nil && len(files) > 0)
 	}
 
 	if !dirExists || !filesExist {
